@@ -134,10 +134,10 @@ func init() {
 	// HUMAN:  The parser requires that you list these in descending
 	// order of MatchSequence length.
 	actions = []Action{
-		Action{[]byte{0x8f, 0xab}, &PrimaryTimingPacket{}},
-		Action{[]byte{0x8f, 0xac}, &SecondaryTimingPacket{}},
-		Action{[]byte{0x8f, 0x4a}, &PPSCharacteristicsPacket{}},
-		Action{[]byte{0x45}, &SoftwareVersionPacket{}},
+		{[]byte{0x8f, 0xab}, &PrimaryTimingPacket{}},
+		{[]byte{0x8f, 0xac}, &SecondaryTimingPacket{}},
+		{[]byte{0x8f, 0x4a}, &PPSCharacteristicsPacket{}},
+		{[]byte{0x45}, &SoftwareVersionPacket{}},
 	}
 }
 
