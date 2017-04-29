@@ -8,6 +8,7 @@ import (
 	"math"
 	"net"
 	"os"
+	"sort"
 	"time"
 )
 
@@ -113,12 +114,12 @@ func (p *SecondaryTimingPacket) Handle() {
 }
 
 func (p *PrimaryTimingPacket) Handle() {
-	fmt.Printf("Primary Timing Packet:  %d/%d/%d %d:%d:%d  (GPS offset %d)\n", p.Year, p.Month, p.DayOfMonth, p.Hours, p.Minutes, p.Seconds, p.UTCOffset)
+	fmt.Printf("Primary Timing Packet:  %04d/%02d/%02d %02d:%02d:%02d  (GPS offset %d)\n", p.Year, p.Month, p.DayOfMonth, p.Hours, p.Minutes, p.Seconds, p.UTCOffset)
 
 }
 
 func (p *SoftwareVersionPacket) Handle() {
-	fmt.Printf("Software Version Response:  App: %d.%d %d/%d/%d  GPS: %d.%d %d/%d/%d\n",
+	fmt.Printf("Software Version Response:  App: %d.%d %04d/%02d/%02d  GPS: %d.%d %04d/%02d/%02d\n",
 		p.AppMajor, p.AppMinor, int(p.AppYearFrom2000)+2000, p.AppMonth, p.AppDay,
 		p.GPSMajor, p.GPSMinor, int(p.GPSYearFrom2000)+2000, p.GPSMonth, p.GPSDay)
 }
@@ -183,25 +184,32 @@ type NumberAndLevel struct {
 	SignalLevel float32
 }
 
-func (p *NumberAndLevel) Handle() {
-	level := int(p.SignalLevel)
-	if level > 0 {
-		fmt.Printf("Satellite Signal Report:  PRN %d Signal %d\n",
-			p.PRNNumber, level)
-	}
+type NumberAndLevelInt struct {
+	PRNNumber      uint8
+	SignalLevelInt int
 }
 
 func handleSatelliteSignalReport(msg []byte) {
 	var p NumberAndLevel
+	var l []NumberAndLevelInt
 
 	count := int(msg[1])
 	r := bytes.NewReader(msg[2:])
-	i := 0
-	for i < count {
+	for i := 0; i < count; i++ {
 		binary.Read(r, binary.BigEndian, &p)
-		p.Handle()
-		i++
+		level := int(p.SignalLevel)
+		if level > 0 {
+			l = append(l, NumberAndLevelInt{p.PRNNumber, level})
+		}
 	}
+	sort.Slice(l, func(i, j int) bool {
+		return l[i].PRNNumber < l[j].PRNNumber
+	})
+	fmt.Printf("Satellite Signal Report PRN/Signal: ")
+	for _, q := range l {
+		fmt.Printf("%d/%d ", q.PRNNumber, q.SignalLevelInt)
+	}
+	fmt.Printf("\n")
 }
 
 func handleVariableMsg(msg []byte) {
