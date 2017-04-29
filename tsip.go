@@ -5,7 +5,9 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"net"
+	"os"
 	"time"
 )
 
@@ -34,6 +36,10 @@ type GetSoftwareVersionCmd struct {
 	// NODATA - this command is empty
 }
 
+type GetSignalLevelCmd struct {
+	// NODATA - this command is empty
+}
+
 // Note:  The Thunderbolt E appears to send year - 2000 for the App/GPS info, not
 // Year - 1900.  (But the packet struct here is written per the spec).
 // Also, Trimble refers to the software version as 2.10, but it gets
@@ -43,15 +49,17 @@ type SoftwareVersionPacket struct {
 	AppMinor        uint8
 	AppMonth        uint8
 	AppDay          uint8
-	AppYearFrom1900 uint8
+	AppYearFrom2000 uint8
 	GPSMajor        uint8
 	GPSMinor        uint8
 	GPSMonth        uint8
 	GPSDay          uint8
-	GPSYearFrom1900 uint8
+	GPSYearFrom2000 uint8
 }
 
 func (c *GetSoftwareVersionCmd) PacketID() []byte { return []byte{0x1f} }
+
+func (c *GetSignalLevelCmd) PacketID() []byte { return []byte{0x27} }
 
 type PrimaryTimingPacket struct {
 	Subcode    uint8
@@ -90,8 +98,18 @@ type SecondaryTimingPacket struct {
 	Spare                int64
 }
 
+type PPSCharacteristicsPacket struct {
+	Subcode         uint8
+	PPSOutputEnable uint8
+	Reserved        uint8
+	PPSPolarity     uint8
+	PPSOffset       float64
+	BiasThreshold   float32
+}
+
 func (p *SecondaryTimingPacket) Handle() {
-	fmt.Printf("Secondary packet:  RCV %d, DIS %d, SUR %d PPS-OFFSET: %f CriticalAlarm: %x MinorAlarm: %x  Temp: %f\n", p.ReceiverMode, p.DiscipliningMode, p.SelfSurveyProgress, p.PPSOffset, p.CriticalAlarms, p.MinorAlarms, p.Temperature)
+	fmt.Printf("Secondary packet:  RCV %d, DIS %d, SUR %d PPS-OFFSET: %f CriticalAlarm: %x MinorAlarm: %x DecodeStatus: %x Temp: %f Lat: %f Long: %f Alt: %f \n",
+		p.ReceiverMode, p.DiscipliningMode, p.SelfSurveyProgress, p.PPSOffset, p.CriticalAlarms, p.MinorAlarms, p.GPSDecodeStatus, p.Temperature, p.Latitude*180.0/math.Pi, p.Longitude*180.0/math.Pi, p.Altitude)
 }
 
 func (p *PrimaryTimingPacket) Handle() {
@@ -100,9 +118,14 @@ func (p *PrimaryTimingPacket) Handle() {
 }
 
 func (p *SoftwareVersionPacket) Handle() {
-	fmt.Printf("Software Version Response.  App: %d.%d %d/%d/%d  GPS: %d.%d %d/%d/%d\n",
-		p.AppMajor, p.AppMinor, int(p.AppYearFrom1900)+1900, p.AppMonth, p.AppDay,
-		p.GPSMajor, p.GPSMinor, int(p.GPSYearFrom1900)+1900, p.GPSMonth, p.GPSDay)
+	fmt.Printf("Software Version Response:  App: %d.%d %d/%d/%d  GPS: %d.%d %d/%d/%d\n",
+		p.AppMajor, p.AppMinor, int(p.AppYearFrom2000)+2000, p.AppMonth, p.AppDay,
+		p.GPSMajor, p.GPSMinor, int(p.GPSYearFrom2000)+2000, p.GPSMonth, p.GPSDay)
+}
+
+func (p *PPSCharacteristicsPacket) Handle() {
+	fmt.Printf("PPS Characteristics packet: Output-enable %d, Polarity %d, PPS Offset: %f, Bias Threshold: %f\n",
+		p.PPSOutputEnable, p.PPSPolarity, p.PPSOffset, p.BiasThreshold)
 }
 
 var actions []Action
@@ -113,6 +136,7 @@ func init() {
 	actions = []Action{
 		Action{[]byte{0x8f, 0xab}, &PrimaryTimingPacket{}},
 		Action{[]byte{0x8f, 0xac}, &SecondaryTimingPacket{}},
+		Action{[]byte{0x8f, 0x4a}, &PPSCharacteristicsPacket{}},
 		Action{[]byte{0x45}, &SoftwareVersionPacket{}},
 	}
 }
@@ -150,6 +174,40 @@ func handleMsg(msg []byte) {
 		binary.Read(r, binary.BigEndian, p)
 		p.Handle()
 	} else {
+		handleVariableMsg(msg)
+	}
+}
+
+type NumberAndLevel struct {
+	PRNNumber   uint8
+	SignalLevel float32
+}
+
+func (p *NumberAndLevel) Handle() {
+	level := int(p.SignalLevel)
+	if level > 0 {
+		fmt.Printf("Satellite Signal Report:  PRN %d Signal %d\n",
+			p.PRNNumber, level)
+	}
+}
+
+func handleSatelliteSignalReport(msg []byte) {
+	var p NumberAndLevel
+
+	count := int(msg[1])
+	r := bytes.NewReader(msg[2:])
+	i := 0
+	for i < count {
+		binary.Read(r, binary.BigEndian, &p)
+		p.Handle()
+		i++
+	}
+}
+
+func handleVariableMsg(msg []byte) {
+	if msg[0] == 0x47 { // Satellite Signal Report
+		handleSatelliteSignalReport(msg)
+	} else {
 		fmt.Printf("Unknown packet type: %x (%x)\n", msg[0], msg[1])
 	}
 }
@@ -157,8 +215,15 @@ func handleMsg(msg []byte) {
 var theConn net.Conn // xxx, fix me...
 
 func main() {
-	fmt.Println("connecting to serial server")
-	conn, err := net.Dial("tcp", "192.168.2.111:6001")
+	if len(os.Args) != 3 {
+		fmt.Printf("Usage: %s address port\n", os.Args[0])
+		os.Exit(1)
+	}
+	address := os.Args[1]
+	port := os.Args[2]
+	destination := string(address) + ":" + string(port)
+	fmt.Printf("connecting to serial server %s\n", destination)
+	conn, err := net.Dial("tcp", destination)
 	if err != nil {
 		fmt.Println("could not connect:", err)
 		return
@@ -181,6 +246,12 @@ func main() {
 		time.Sleep(time.Second)
 		fmt.Println("Sending GetSoftwareVersionCmd")
 		sendCmd(&GetSoftwareVersionCmd{})
+	}()
+
+	go func() {
+		time.Sleep(time.Second)
+		fmt.Println("Sending GetSignalLevelCmd")
+		sendCmd(&GetSignalLevelCmd{})
 	}()
 
 	var msg [MSG_MAX_LEN]byte
