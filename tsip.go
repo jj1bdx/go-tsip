@@ -41,6 +41,10 @@ type GetSignalLevelCmd struct {
 	// NODATA - this command is empty
 }
 
+type GetSatelliteTrackingStatusCmd struct {
+	SatelliteNumber uint8
+}
+
 // Note:  The Thunderbolt E appears to send year - 2000 for the App/GPS info, not
 // Year - 1900.  (But the packet struct here is written per the spec).
 // Also, Trimble refers to the software version as 2.10, but it gets
@@ -58,9 +62,19 @@ type SoftwareVersionPacket struct {
 	GPSYearFrom2000 uint8
 }
 
+func RadToDeg32(rad float32) float32 { return rad * 180.0 / math.Pi }
+
+func RadToDeg64(rad float64) float64 { return rad * 180.0 / math.Pi }
+
+func Round32(x float32) float32 { return float32(math.Floor(float64(x) + 0.5)) }
+
+func RoundToInt32(x float32) int { return int(Round32(x)) }
+
 func (c *GetSoftwareVersionCmd) PacketID() []byte { return []byte{0x1f} }
 
 func (c *GetSignalLevelCmd) PacketID() []byte { return []byte{0x27} }
+
+func (c *GetSatelliteTrackingStatusCmd) PacketID() []byte { return []byte{0x3c} }
 
 type PrimaryTimingPacket struct {
 	Subcode    uint8
@@ -108,14 +122,28 @@ type PPSCharacteristicsPacket struct {
 	BiasThreshold   float32
 }
 
+type SatelliteTrackingStatusPacket struct {
+	PRNnumber            uint8
+	SlotAndChannelNumber uint8
+	Acquisition          uint8
+	Ephemeris            uint8
+	SignalLevel          float32
+	LastMeasurementTime  float32
+	Elevation            float32
+	Azimuth              float32
+	OldMeasurement       uint8
+	IntegerMsec          uint8
+	BadData              uint8
+	DataCollection       uint8
+}
+
 func (p *SecondaryTimingPacket) Handle() {
 	fmt.Printf("Secondary packet:  RCV %d, DIS %d, SUR %d PPS-OFFSET: %f CriticalAlarm: %x MinorAlarm: %x DecodeStatus: %x Temp: %f Lat: %f Long: %f Alt: %f \n",
-		p.ReceiverMode, p.DiscipliningMode, p.SelfSurveyProgress, p.PPSOffset, p.CriticalAlarms, p.MinorAlarms, p.GPSDecodeStatus, p.Temperature, p.Latitude*180.0/math.Pi, p.Longitude*180.0/math.Pi, p.Altitude)
+		p.ReceiverMode, p.DiscipliningMode, p.SelfSurveyProgress, p.PPSOffset, p.CriticalAlarms, p.MinorAlarms, p.GPSDecodeStatus, p.Temperature, RadToDeg64(p.Latitude), RadToDeg64(p.Longitude), p.Altitude)
 }
 
 func (p *PrimaryTimingPacket) Handle() {
 	fmt.Printf("Primary Timing Packet:  %04d/%02d/%02d %02d:%02d:%02d  (GPS offset %d)\n", p.Year, p.Month, p.DayOfMonth, p.Hours, p.Minutes, p.Seconds, p.UTCOffset)
-
 }
 
 func (p *SoftwareVersionPacket) Handle() {
@@ -129,6 +157,14 @@ func (p *PPSCharacteristicsPacket) Handle() {
 		p.PPSOutputEnable, p.PPSPolarity, p.PPSOffset, p.BiasThreshold)
 }
 
+func (p *SatelliteTrackingStatusPacket) Handle() {
+	signal := int(p.SignalLevel)
+	if signal > 0 {
+		fmt.Printf("Satellite Tracking Status:  PRN: %d, Signal: %d, Elev: %d, Azi: %d\n",
+			p.PRNnumber, signal, RoundToInt32(RadToDeg32(p.Elevation)), RoundToInt32(RadToDeg32(p.Azimuth)))
+	}
+}
+
 var actions []Action
 
 func init() {
@@ -138,6 +174,7 @@ func init() {
 		{[]byte{0x8f, 0xab}, &PrimaryTimingPacket{}},
 		{[]byte{0x8f, 0xac}, &SecondaryTimingPacket{}},
 		{[]byte{0x8f, 0x4a}, &PPSCharacteristicsPacket{}},
+		{[]byte{0x5c}, &SatelliteTrackingStatusPacket{}},
 		{[]byte{0x45}, &SoftwareVersionPacket{}},
 	}
 }
@@ -257,9 +294,11 @@ func main() {
 	}()
 
 	go func() {
-		time.Sleep(time.Second)
-		fmt.Println("Sending GetSignalLevelCmd")
-		sendCmd(&GetSignalLevelCmd{})
+		for true {
+			time.Sleep(30 * time.Second)
+			fmt.Println("Sending GetSatelliteTrackingStatusCmd")
+			sendCmd(&GetSatelliteTrackingStatusCmd{0x00})
+		}
 	}()
 
 	var msg [MSG_MAX_LEN]byte
