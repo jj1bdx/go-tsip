@@ -1,0 +1,70 @@
+--- tsip.go	2017-04-30 09:56:49.000000000 +0900
++++ tsip-track.go	2017-04-30 10:26:46.000000000 +0900
+@@ -160,7 +160,7 @@
+ func (p *SatelliteTrackingStatusPacket) Handle() {
+ 	signal := int(p.SignalLevel)
+ 	if signal > 0 {
+-		fmt.Printf("Satellite Tracking Status:  PRN: %d, Signal: %d, Elev: %d, Azi: %d\n",
++		fmt.Printf("PRN %d Signal %d Elev %d Azi %d\n",
+ 			p.PRNnumber, signal, RoundToInt32(RadToDeg32(p.Elevation)), RoundToInt32(RadToDeg32(p.Azimuth)))
+ 	}
+ }
+@@ -171,11 +171,11 @@
+ 	// HUMAN:  The parser requires that you list these in descending
+ 	// order of MatchSequence length.
+ 	actions = []Action{
+-		{[]byte{0x8f, 0xab}, &PrimaryTimingPacket{}},
+-		{[]byte{0x8f, 0xac}, &SecondaryTimingPacket{}},
+-		{[]byte{0x8f, 0x4a}, &PPSCharacteristicsPacket{}},
++		// {[]byte{0x8f, 0xab}, &PrimaryTimingPacket{}},
++		// {[]byte{0x8f, 0xac}, &SecondaryTimingPacket{}},
++		// {[]byte{0x8f, 0x4a}, &PPSCharacteristicsPacket{}},
+ 		{[]byte{0x5c}, &SatelliteTrackingStatusPacket{}},
+-		{[]byte{0x45}, &SoftwareVersionPacket{}},
++		// {[]byte{0x45}, &SoftwareVersionPacket{}},
+ 	}
+ }
+ 
+@@ -251,9 +251,9 @@
+ 
+ func handleVariableMsg(msg []byte) {
+ 	if msg[0] == 0x47 { // Satellite Signal Report
+-		handleSatelliteSignalReport(msg)
++		// handleSatelliteSignalReport(msg)
+ 	} else {
+-		fmt.Printf("Unknown packet type: %x (%x)\n", msg[0], msg[1])
++		// fmt.Printf("Unknown packet type: %x (%x)\n", msg[0], msg[1])
+ 	}
+ }
+ 
+@@ -267,7 +267,7 @@
+ 	address := os.Args[1]
+ 	port := os.Args[2]
+ 	destination := string(address) + ":" + string(port)
+-	fmt.Printf("connecting to serial server %s\n", destination)
++	// fmt.Printf("connecting to serial server %s\n", destination)
+ 	conn, err := net.Dial("tcp", destination)
+ 	if err != nil {
+ 		fmt.Println("could not connect:", err)
+@@ -288,16 +288,16 @@
+ 	state := 0
+ 	// XXX - demo:  Grab the software version command after running for a second.
+ 	go func() {
+-		time.Sleep(time.Second)
+-		fmt.Println("Sending GetSoftwareVersionCmd")
+-		sendCmd(&GetSoftwareVersionCmd{})
++		// time.Sleep(time.Second)
++		// fmt.Println("Sending GetSoftwareVersionCmd")
++		// sendCmd(&GetSoftwareVersionCmd{})
+ 	}()
+ 
+ 	go func() {
+ 		for true {
+-			time.Sleep(30 * time.Second)
+-			fmt.Println("Sending GetSatelliteTrackingStatusCmd")
++			// fmt.Println("Sending GetSatelliteTrackingStatusCmd")
+ 			sendCmd(&GetSatelliteTrackingStatusCmd{0x00})
++			time.Sleep(30 * time.Second)
+ 		}
+ 	}()
+ 
