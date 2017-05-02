@@ -1,5 +1,5 @@
 --- tsip.go	2017-04-30 09:56:49.000000000 +0900
-+++ tsip-track.go	2017-04-30 10:26:46.000000000 +0900
++++ tsip-track.go	2017-05-02 09:39:00.000000000 +0900
 @@ -160,7 +160,7 @@
  func (p *SatelliteTrackingStatusPacket) Handle() {
  	signal := int(p.SignalLevel)
@@ -37,34 +37,34 @@
  	}
  }
  
-@@ -267,7 +267,7 @@
+@@ -267,7 +267,6 @@
  	address := os.Args[1]
  	port := os.Args[2]
  	destination := string(address) + ":" + string(port)
 -	fmt.Printf("connecting to serial server %s\n", destination)
-+	// fmt.Printf("connecting to serial server %s\n", destination)
  	conn, err := net.Dial("tcp", destination)
  	if err != nil {
  		fmt.Println("could not connect:", err)
-@@ -288,16 +288,16 @@
+@@ -286,19 +285,11 @@
+ 		}
+ 	}
  	state := 0
- 	// XXX - demo:  Grab the software version command after running for a second.
- 	go func() {
+-	// XXX - demo:  Grab the software version command after running for a second.
+-	go func() {
 -		time.Sleep(time.Second)
 -		fmt.Println("Sending GetSoftwareVersionCmd")
 -		sendCmd(&GetSoftwareVersionCmd{})
-+		// time.Sleep(time.Second)
-+		// fmt.Println("Sending GetSoftwareVersionCmd")
-+		// sendCmd(&GetSoftwareVersionCmd{})
- 	}()
+-	}()
  
  	go func() {
- 		for true {
+-		for true {
 -			time.Sleep(30 * time.Second)
 -			fmt.Println("Sending GetSatelliteTrackingStatusCmd")
-+			// fmt.Println("Sending GetSatelliteTrackingStatusCmd")
- 			sendCmd(&GetSatelliteTrackingStatusCmd{0x00})
-+			time.Sleep(30 * time.Second)
- 		}
+-			sendCmd(&GetSatelliteTrackingStatusCmd{0x00})
+-		}
++		sendCmd(&GetSatelliteTrackingStatusCmd{0x00})
++		time.Sleep(time.Second)
++		os.Exit(0)
  	}()
  
+ 	var msg [MSG_MAX_LEN]byte
